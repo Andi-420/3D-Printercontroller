@@ -138,7 +138,8 @@
   <div class="tools">
     <input id="filter" type="search" placeholder="Feld oder Wert suchen, z. B. temper, ams, fan …">
     <label><input id="onlyChanged" type="checkbox"> nur in den letzten 60 s geändert</label>
-    <button id="download">Als JSON herunterladen</button>
+    <button id="downloadAnon" title="Seriennummern, IP-Adressen, URLs, IDs und Dateinamen werden ersetzt. Zum Teilen gedacht.">Anonymisiert herunterladen</button>
+    <button id="download" title="Vollständige Daten inkl. Seriennummern, nur für dich selbst">Als JSON herunterladen</button>
   </div>
   <div class="tablewrap">
     <table>
@@ -468,14 +469,71 @@ $("pushall").addEventListener("click", async () => {
   setTimeout(() => { btn.textContent = "Vollständigen Status anfordern"; btn.disabled = false; }, 3000);
 });
 
-$("download").addEventListener("click", () => {
-  if (!snapshot) return;
-  const blob = new Blob([JSON.stringify(snapshot.state, null, 2)], { type: "application/json" });
+function downloadJson(obj, name) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `bambu-status-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  a.download = `${name}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
   a.click();
-  URL.revokeObjectURL(a.href);
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// ---- Anonymisieren ------------------------------------------------------ //
+// Felder, deren Wert komplett ersetzt wird (Vergleich ohne Groß/Klein).
+const SENSITIVE_KEYS = new Set([
+  "sn", "serial", "serial_number", "dev_id", "device_id", "dev_name", "printer_name",
+  "ip", "ip_addr", "ipaddr", "mask", "gateway", "gw", "dns", "mac", "ssid", "bssid",
+  "task_id", "subtask_id", "project_id", "profile_id", "design_id", "model_id", "job_id",
+  "user_id", "uid", "tray_uuid", "tag_uid", "rtsp_url", "url", "file", "subtask_name", "gcode_file",
+]);
+// IPv4 ohne führende Nullen, damit Firmware-Versionen wie "01.00.07.89" nicht getroffen werden
+const OCTET = "(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)";
+const IPV4 = new RegExp(`(?<![\\d.])${OCTET}(?:\\.${OCTET}){3}(?![\\d.])`, "g");
+const VERSION_KEYS = new Set(["sw_ver", "hw_ver", "ota_new_version_number", "new_ver", "cur_ver", "version"]);
+const URL_RE = /\b[a-z][a-z0-9+.-]*:\/\/[^\s"]+/gi;
+
+function collectSerials(obj, out = new Set()) {
+  if (obj && typeof obj === "object") {
+    for (const [k, v] of Object.entries(obj)) {
+      if (["sn", "serial", "serial_number", "dev_id"].includes(k.toLowerCase()) && typeof v === "string" && v.length >= 6) out.add(v);
+      collectSerials(v, out);
+    }
+  }
+  return out;
+}
+
+// Leere bzw. Null-Werte bleiben stehen (enthalten nichts und zeigen, dass das Feld existiert).
+const isEmptyValue = (v) => v === null || v === "" || v === 0 || v === "0" || v === false;
+
+function anonymize(state, meta) {
+  const serials = [...collectSerials(state)];
+  if (meta?.serial && meta.serial.length >= 6) serials.push(meta.serial);
+  serials.sort((a, b) => b.length - a.length);
+
+  const scrubString = (s, key) => {
+    for (const sn of serials) s = s.split(sn).join("XXXX");
+    s = s.replace(URL_RE, "<url-anonymisiert>");
+    return key && VERSION_KEYS.has(key.toLowerCase()) ? s : s.replace(IPV4, "x.x.x.x");
+  };
+  const walk = (v, key) => {
+    if (key && SENSITIVE_KEYS.has(key.toLowerCase()) && !isEmptyValue(v) && (v === null || typeof v !== "object")) {
+      return `<anonymisiert:${typeof v}>`;
+    }
+    if (Array.isArray(v)) return v.map((x) => walk(x, key));
+    if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x, k)]));
+    return typeof v === "string" ? scrubString(v, key) : v;
+  };
+  return {
+    _hinweis: "Anonymisiert: Seriennummern, IP-Adressen, URLs, IDs und Dateinamen wurden ersetzt.",
+    ...walk(state, null),
+  };
+}
+
+$("download").addEventListener("click", () => {
+  if (snapshot) downloadJson(snapshot.state, "bambu-status");
+});
+$("downloadAnon").addEventListener("click", () => {
+  if (snapshot) downloadJson(anonymize(snapshot.state, snapshot.meta), "bambu-status-anonym");
 });
 
 connect();

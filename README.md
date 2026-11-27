@@ -17,6 +17,9 @@ sind nicht nötig.
   (soweit bekannt) und gelber Markierung, sobald sich ein Wert ändert.
   Hier siehst du, was dein P2S **zusätzlich** alles verrät.
 - **Download** des kompletten Zustands als JSON und optional ein **Mitschnitt** aller Rohnachrichten
+- **Anonymisiert herunterladen:** ersetzt Seriennummern, IP-Adressen, URLs, Cloud-IDs und Dateinamen
+  und ist damit zum Teilen gedacht. Messwerte, Filamentdaten und Firmware-Versionen bleiben erhalten.
+  Der Mitschnitt per `--log` wird **nicht** anonymisiert.
 
 ## Einrichtung
 
