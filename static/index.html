@@ -38,7 +38,7 @@
   .big { font-size: 26px; font-weight: 650; }
   .row { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; }
   .row span:first-child { color: var(--muted); flex: none; }
-  .row span:last-child { text-align: right; overflow-wrap: anywhere; }
+  .row span:last-child { text-align: right; overflow-wrap: break-word; min-width: 0; }
   .bar { height: 10px; background: var(--bar); border-radius: 99px; overflow: hidden; margin: 8px 0; }
   .bar > div { height: 100%; background: var(--accent); transition: width .5s; }
   .temp { display: flex; align-items: baseline; justify-content: space-between; padding: 4px 0; }
@@ -49,6 +49,10 @@
   .tray.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   .swatch { height: 22px; border-radius: 5px; margin-bottom: 4px; border: 1px solid var(--line); }
   .swatch.empty { background: repeating-linear-gradient(45deg, transparent 0 4px, var(--line) 4px 8px); }
+  .tray .swatch.multi { border: none; }
+  .dry { margin: 6px 0 2px; padding: 6px 10px; border-radius: 8px; background: var(--bar); font-size: 13px; }
+  .hmsitem { padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .hmsitem:last-child { border-bottom: none; }
   .hms { color: var(--err); font-family: ui-monospace, monospace; font-size: 13px; }
   h3.section { margin: 26px 0 10px; font-size: 17px; }
   .tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
@@ -93,6 +97,7 @@
       <div class="row"><span>Schicht</span><span id="layer">—</span></div>
       <div class="row"><span>Restzeit</span><span id="remaining">—</span></div>
       <div class="row"><span>Fertig um</span><span id="eta">—</span></div>
+      <div class="row"><span>Platte</span><span id="plate">—</span></div>
       <div class="row"><span>Phase</span><span id="stage">—</span></div>
     </section>
 
@@ -109,17 +114,31 @@
       <div class="row"><span>Aux-Lüfter</span><span id="fanAux">—</span></div>
       <div class="row"><span>Kammerlüfter</span><span id="fanChamber">—</span></div>
       <div class="row"><span>Hotend-Lüfter</span><span id="fanHeatbreak">—</span></div>
+      <div class="row"><span>Luftführung</span><span id="airduct">—</span></div>
       <div class="row"><span>Geschwindigkeit</span><span id="speed">—</span></div>
+    </section>
+
+    <section class="card">
+      <h2>Düse &amp; Hardware</h2>
+      <div class="row"><span>Düse</span><span id="nozzleInfo">—</span></div>
+      <div class="row"><span>Düsenverschleiß</span><span id="nozzleWear">—</span></div>
+      <div class="row"><span>Filament-Puffer</span><span id="buffer">—</span></div>
+      <div class="row"><span>Licht</span><span id="lights">—</span></div>
+      <div class="row"><span>Kamera</span><span id="camera">—</span></div>
+      <div class="row"><span>Zeitraffer-Speicher</span><span id="tlStorage">—</span></div>
+      <div class="row"><span>Speicherkarte/USB</span><span id="sdcard">—</span></div>
+    </section>
+
+    <section class="card">
+      <h2>KI-Überwachung</h2>
+      <div id="xcam" class="muted">—</div>
     </section>
 
     <section class="card">
       <h2>System</h2>
       <div class="row"><span>WLAN-Signal</span><span id="wifi">—</span></div>
-      <div class="row"><span>Düse</span><span id="nozzleInfo">—</span></div>
-      <div class="row"><span>Licht</span><span id="lights">—</span></div>
-      <div class="row"><span>Speicherkarte</span><span id="sdcard">—</span></div>
-      <div class="row"><span>Kamera</span><span id="camera">—</span></div>
-      <div class="row"><span>Firmware</span><span id="firmware">—</span></div>
+      <div class="row"><span>Verbindung</span><span id="printType">—</span></div>
+      <div id="firmware"></div>
       <div class="row"><span>Update</span><span id="upgrade">—</span></div>
     </section>
 
@@ -206,7 +225,7 @@ const DESCRIPTIONS = {
   "print.ams.tray_tar": "Ziel-Spule beim Filamentwechsel",
   "print.ams.tray_exist_bits": "Welche Fächer belegt sind (Bitmaske)",
   "print.ams.ams[].id": "AMS-Nummer",
-  "print.ams.ams[].humidity": "Feuchtigkeitsstufe (1–5)",
+  "print.ams.ams[].humidity": "Feuchtigkeitsstufe (1 = sehr feucht … 5 = sehr trocken)",
   "print.ams.ams[].humidity_raw": "Luftfeuchtigkeit im AMS (%)",
   "print.ams.ams[].temp": "Temperatur im AMS (°C)",
   "print.ams.ams[].tray[].id": "Fachnummer",
@@ -231,6 +250,59 @@ const DESCRIPTIONS = {
   "info.module[].sw_ver": "Firmware-Version",
   "info.module[].hw_ver": "Hardware-Version",
   "info.module[].sn": "Seriennummer des Moduls",
+  "info.module[].product_name": "Produktname des Moduls",
+  "info.module[].loader_ver": "Bootloader-Version",
+  "info.module[].visible": "Wird in der App angezeigt",
+  // --- neuere Firmware (P2S, H2D …) ---
+  "print.device.extruder.info[].temp": "Düsentemperatur gepackt: (Soll × 65536) + Ist",
+  "print.device.bed.info.temp": "Betttemperatur gepackt: (Soll × 65536) + Ist",
+  "print.device.bed_temp": "Betttemperatur gepackt: (Soll × 65536) + Ist",
+  "print.device.ctc.info.temp": "Kammertemperatur (°C)",
+  "print.info.temp": "Kammertemperatur (°C)",
+  "print.device.nozzle.info[].diameter": "Düsendurchmesser (mm)",
+  "print.device.nozzle.info[].type": "Düsentyp (HS = gehärteter Stahl)",
+  "print.device.nozzle.info[].wear": "Düsenverschleiß (%)",
+  "print.device.nozzle.info[].sn": "Seriennummer der Düse",
+  "print.device.airduct.modeCur": "Luftführung: 0 = Kühlen, 1 = Heizen (Kammer geschlossen)",
+  "print.device.airduct.parts[].state": "Lüfterleistung (%)",
+  "print.device.airduct.parts[].tar_state": "Ziel-Lüfterleistung (%)",
+  "print.device.toolhead.pos_x": "Druckkopf-Position X (vermutlich Meter)",
+  "print.device.toolhead.pos_y": "Druckkopf-Position Y (vermutlich Meter)",
+  "print.device.toolhead.pos_z": "Druckkopf-Position Z (vermutlich Meter)",
+  "print.device.cam.tl_internal_free_kb": "Freier interner Speicher für Zeitraffer (kB)",
+  "print.device.cam.tl_internal_total_kb": "Interner Speicher für Zeitraffer gesamt (kB)",
+  "print.device.plate.cur_id": "Erkannte Druckplatte",
+  "print.ipcam.tl_internal_free_kb": "Freier interner Speicher für Zeitraffer (kB)",
+  "print.ipcam.tl_internal_total_kb": "Interner Speicher für Zeitraffer gesamt (kB)",
+  "print.ipcam.rtsp_url": "Kamera-Stream (nur im LAN-Modus aktiv)",
+  "print.ipcam.liveview_preview": "Live-Vorschau aktiv",
+  "print.3D.layer_num": "Aktuelle Schicht",
+  "print.3D.total_layer_num": "Anzahl Schichten gesamt",
+  "print.percent": "Fortschritt in %",
+  "print.remain_time": "Restzeit in Minuten",
+  "print.plate_idx": "Gedruckte Platte im Projekt",
+  "print.plate_cnt": "Anzahl Platten im Projekt",
+  "print.online.ahb": "Filament-Puffer verbunden",
+  "print.xcam.spaghetti_detector": "KI: Spaghetti-Erkennung",
+  "print.xcam.first_layer_inspector": "KI: Prüfung der ersten Schicht",
+  "print.xcam.buildplate_marker_detector": "KI: Druckplatten-Erkennung",
+  "print.xcam.printing_monitor": "KI: Drucküberwachung",
+  "print.xcam.print_halt": "Druck bei erkanntem Problem anhalten",
+  "print.xcam.halt_print_sensitivity": "Empfindlichkeit der Problemerkennung",
+  "print.xcam.allow_skip_parts": "Einzelne Teile überspringen erlaubt",
+  "print.hms[].ts_unix": "Zeitpunkt der Meldung (JJJJMMTTHHMMSS)",
+  "print.vir_slot": "Externe Spule (neue Firmware, ersetzt vt_tray)",
+  "print.upgrade_state.message": "Letzte Meldung des Update-Systems",
+  "print.ams.ams[].dry_time": "Trocknung: Restzeit (Minuten, 0 = aus)",
+  "print.ams.ams[].dry_setting.dry_temperature": "Trocknungstemperatur (°C)",
+  "print.ams.ams[].dry_setting.dry_duration": "Trocknungsdauer (h)",
+  "print.ams.ams[].dry_setting.dry_filament": "Filament, für das getrocknet wird",
+  "print.ams.ams[].tray[].cols": "Farben (mehrere bei Mehrfarb-Filament)",
+  "print.ams.ams[].tray[].total_len": "Filamentlänge der vollen Spule (mm)",
+  "print.ams.ams[].tray[].tray_info_idx": "Bambu-Filamentprofil (z. B. GFA01 = PLA Matte, GFG99 = Generic PETG)",
+  "print.ams.ams[].tray[].tray_id_name": "Bambu-Artikelcode der Spule",
+  "print.ams.tray_pre": "Vorher aktive Spule",
+  "print.ams.tray_is_bbl_bits": "Welche Fächer Bambu-Spulen enthalten (Bitmaske)",
 };
 
 const STATES = { IDLE: "Bereit", PREPARE: "Vorbereitung", RUNNING: "Druckt", PAUSE: "Pausiert",
@@ -250,6 +322,46 @@ const STAGES = {
   33: "Pause: Cutter-Fehler", 34: "Pause: Fehler erste Schicht", 35: "Pause: Düse verstopft",
   255: "—", "-1": "—",
 };
+
+const AIRDUCT = { 0: "Kühlen", 1: "Heizen" };
+const LIGHTS = { chamber_light: "Kammerlicht", work_light: "Arbeitslicht", chamber_light2: "Kammerlicht 2" };
+const LIGHT_MODES = { on: "an", off: "aus", flashing: "blinkt" };
+const HUMIDITY = { 1: "sehr feucht", 2: "feucht", 3: "mittel", 4: "trocken", 5: "sehr trocken" };
+const HMS_LEVELS = { 1: "schwerer Fehler", 2: "Fehler", 3: "Warnung", 4: "Info" };
+const PRINT_TYPES = { cloud: "Cloud (Handy-App aktiv)", local: "Lokal", idle: "—" };
+const SENSITIVITY = { low: "niedrig", medium: "mittel", high: "hoch" };
+const XCAM = {
+  spaghetti_detector: "Spaghetti-Erkennung",
+  first_layer_inspector: "Erste-Schicht-Prüfung",
+  buildplate_marker_detector: "Druckplatten-Erkennung",
+  printing_monitor: "Drucküberwachung",
+  print_halt: "Bei Problem anhalten",
+  allow_skip_parts: "Teile überspringen erlaubt",
+};
+const NOZZLE_MATERIAL = { HS: "gehärteter Stahl", HH: "gehärteter Stahl, High-Flow" };
+
+function nozzleTypeName(t) {
+  if (/^[A-Z]{2}\d{2}$/.test(t)) return NOZZLE_MATERIAL[t.slice(0, 2)] ? `${NOZZLE_MATERIAL[t.slice(0, 2)]} (${t})` : t;
+  return t.replace(/_/g, " ");
+}
+function amsName(state, id) {
+  const mod = (state.info?.module || []).find((m) => /^(ams|n3f|n3s)\//.test(m.name) && m.name.endsWith("/" + id) && m.product_name);
+  return mod ? mod.product_name.replace(/\s*\(\d+\)$/, "") + ` (${Number(id) + 1})` : `AMS ${Number(id) + 1}`;
+}
+function wifiQuality(sig) {
+  const v = parseInt(sig, 10);
+  if (isNaN(v)) return "?";
+  return v >= -55 ? "sehr gut" : v >= -65 ? "gut" : v >= -75 ? "mäßig" : "schwach";
+}
+function fmtKb(kb) {
+  kb = num(kb); if (kb === null) return "—";
+  return kb >= 1048576 ? `${(kb / 1048576).toFixed(1)} GB` : `${Math.round(kb / 1024)} MB`;
+}
+// "20261115193103" -> "15.11.2026 19:31"
+function fmtBambuTs(ts) {
+  const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})/.exec(String(ts || ""));
+  return m ? `${m[3]}.${m[2]}.${m[1]} ${m[4]}:${m[5]}` : "";
+}
 
 let snapshot = null;
 const fieldInfo = new Map();   // Pfad -> { value, changedAt }
@@ -272,9 +384,9 @@ function unpackTemp(v) {
   v = num(v); if (v === null) return [null, null];
   return v > 0xffff ? [v & 0xffff, v >>> 16] : [v, null];
 }
-function nozzleTemps(p, state) {
+function nozzleTemps(p) {
   if (p.nozzle_temper !== undefined) return [p.nozzle_temper, p.nozzle_target_temper];
-  const info = state.device?.extruder?.info;
+  const info = p.device?.extruder?.info;
   if (Array.isArray(info) && info.length) return unpackTemp(info[0].temp);
   return [null, null];
 }
@@ -292,81 +404,134 @@ function trayColor(c) {
 
 function renderSummary(state, meta) {
   const p = state.print || {};
+  const dev = p.device || {};
 
+  // --- Druck ---
   setText("jobState", STATES[p.gcode_state] || p.gcode_state || "—");
   setText("jobName", p.subtask_name || "");
-  const pct = num(p.mc_percent);
+  const pct = num(p.mc_percent ?? p.percent);
   $("progressBar").style.width = `${pct ?? 0}%`;
   setText("progress", pct === null ? "—" : `${pct} %`);
   setText("layer", num(p.layer_num) === null ? "—" : `${p.layer_num} / ${p.total_layer_num ?? "?"}`);
-  setText("remaining", fmtMinutes(p.mc_remaining_time));
-  const rem = num(p.mc_remaining_time);
+  const rem = num(p.mc_remaining_time ?? p.remain_time);
+  setText("remaining", fmtMinutes(rem));
   setText("eta", rem && p.gcode_state === "RUNNING"
     ? new Date(Date.now() + rem * 60000).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) + " Uhr" : "—");
+  setText("plate", num(p.plate_idx) ? `${p.plate_idx}${num(p.plate_cnt) ? " von " + p.plate_cnt : ""}` : "—");
   setText("stage", p.stg_cur === undefined ? "—" : (STAGES[p.stg_cur] ?? `Phase ${p.stg_cur}`));
 
-  const [nz, nzT] = nozzleTemps(p, state);
+  // --- Temperaturen: klassische Felder, sonst gepackte device-Werte ---
+  const [nz, nzT] = nozzleTemps(p);
   setText("tNozzle", fmtTemp(nz)); setText("tNozzleT", num(nzT) ? `→ ${fmtTemp(nzT)}` : "");
-  setText("tBed", fmtTemp(p.bed_temper)); setText("tBedT", num(p.bed_target_temper) ? `→ ${fmtTemp(p.bed_target_temper)}` : "");
-  setText("tChamber", fmtTemp(p.chamber_temper));
-  setText("tChamberT", num(p.chamber_target_temper) ? `→ ${fmtTemp(p.chamber_target_temper)}` : "");
+  const [bd, bdT] = p.bed_temper !== undefined ? [p.bed_temper, p.bed_target_temper] : unpackTemp(dev.bed?.info?.temp ?? dev.bed_temp);
+  setText("tBed", fmtTemp(bd)); setText("tBedT", num(bdT) ? `→ ${fmtTemp(bdT)}` : "");
+  const [ch, chT] = p.chamber_temper !== undefined ? [p.chamber_temper, p.chamber_target_temper]
+    : unpackTemp(dev.ctc?.info?.temp ?? p.info?.temp);
+  setText("tChamber", fmtTemp(ch)); setText("tChamberT", num(chT) ? `→ ${fmtTemp(chT)}` : "");
 
+  // --- Lüfter ---
   setText("fanPart", fanPct(p.cooling_fan_speed));
   setText("fanAux", fanPct(p.big_fan1_speed));
   setText("fanChamber", fanPct(p.big_fan2_speed));
   setText("fanHeatbreak", fanPct(p.heatbreak_fan_speed));
-  setText("speed", p.spd_lvl === undefined ? "—" : `${SPEEDS[p.spd_lvl] || p.spd_lvl}${p.spd_mag ? ` (${p.spd_mag} %)` : ""}`);
+  const duct = dev.airduct;
+  setText("airduct", duct && duct.modeCur !== undefined ? (AIRDUCT[duct.modeCur] ?? `Modus ${duct.modeCur}`) : "—");
+  setText("speed", p.spd_lvl === undefined ? "—" : `${SPEEDS[p.spd_lvl] || p.spd_lvl}${p.spd_mag ? ` (${p.spd_mag}\u00a0%)` : ""}`);
 
-  setText("wifi", p.wifi_signal || "—");
-  setText("nozzleInfo", p.nozzle_diameter ? `${p.nozzle_diameter} mm${p.nozzle_type ? ", " + p.nozzle_type.replace(/_/g, " ") : ""}` : "—");
+  // --- Düse & Hardware ---
+  const noz = dev.nozzle?.info?.[0];
+  const diameter = noz?.diameter ?? p.nozzle_diameter;
+  const ntype = noz?.type ?? p.nozzle_type;
+  setText("nozzleInfo", diameter ? `${diameter} mm${ntype ? ", " + nozzleTypeName(ntype) : ""}` : "—");
+  setText("nozzleWear", num(noz?.wear) === null ? "—" : `${noz.wear} %`);
+  setText("buffer", p.online?.ahb === undefined ? "—" : (p.online.ahb ? "verbunden" : "nicht verbunden"));
   setText("lights", Array.isArray(p.lights_report) && p.lights_report.length
-    ? p.lights_report.map((l) => `${l.node.replace(/_/g, " ")}: ${l.mode}`).join(", ") : "—");
+    ? p.lights_report.map((l) => `${LIGHTS[l.node] || l.node.replace(/_/g, " ")}: ${LIGHT_MODES[l.mode] || l.mode}`).join(", ") : "—");
+  setText("camera", p.ipcam ? [p.ipcam.resolution, p.ipcam.timelapse === "enable" ? "Zeitraffer an" : "Zeitraffer aus"].filter(Boolean).join(", ") : "—");
+  const tlFree = num(p.ipcam?.tl_internal_free_kb ?? dev.cam?.tl_internal_free_kb);
+  const tlTotal = num(p.ipcam?.tl_internal_total_kb ?? dev.cam?.tl_internal_total_kb);
+  setText("tlStorage", tlTotal ? `${fmtKb(tlFree)} frei von ${fmtKb(tlTotal)}` : "—");
   setText("sdcard", p.sdcard === undefined ? "—" : (p.sdcard ? "eingesteckt" : "keine"));
-  setText("camera", p.ipcam ? `${p.ipcam.resolution || ""}${p.ipcam.timelapse === "enable" ? ", Zeitraffer an" : ""}`.replace(/^, /, "") || "vorhanden" : "—");
-  const ota = (state.info?.module || []).find((m) => m.name === "ota");
-  setText("firmware", ota?.sw_ver || "—");
-  const up = p.upgrade_state;
-  setText("upgrade", !up ? "—" : (up.new_version_state === 1 ? `neue Version ${up.ota_new_version_number || ""} verfügbar`
-    : (!up.status || up.status === "IDLE" ? "aktuell" : up.status)));
 
-  // AMS
+  // --- KI-Überwachung ---
+  const x = p.xcam;
+  if (x && typeof x === "object") {
+    const rows = Object.entries(XCAM).filter(([k]) => x[k] !== undefined)
+      .map(([k, label]) => `<div class="row"><span>${label}</span><span>${x[k] ? "an" : "aus"}</span></div>`);
+    if (x.halt_print_sensitivity) rows.push(`<div class="row"><span>Empfindlichkeit</span><span>${esc(SENSITIVITY[x.halt_print_sensitivity] || x.halt_print_sensitivity)}</span></div>`);
+    $("xcam").innerHTML = rows.join("") || "—"; $("xcam").className = "";
+  }
+
+  // --- System ---
+  setText("wifi", p.wifi_signal ? `${p.wifi_signal} (${wifiQuality(p.wifi_signal)})` : "—");
+  setText("printType", PRINT_TYPES[p.print_type] || p.print_type || "—");
+  const modules = (state.info?.module || []).filter((m) => m.product_name && m.sw_ver);
+  const ota = (state.info?.module || []).find((m) => m.name === "ota");
+  $("firmware").innerHTML = (modules.length ? modules : ota ? [{ product_name: "Firmware", sw_ver: ota.sw_ver }] : [])
+    .map((m) => `<div class="row"><span>${esc(m.product_name)}</span><span>${esc(m.sw_ver)}</span></div>`).join("");
+  const up = p.upgrade_state;
+  setText("upgrade", !up ? "—" : up.new_version_state === 1
+    ? `neue Version ${up.ota_new_version_number || ""} verfügbar` : "aktuell");
+
+  // --- AMS ---
   const ams = p.ams?.ams;
   const trayNow = String(p.ams?.tray_now ?? "");
   let html = "";
   if (Array.isArray(ams) && ams.length) {
     for (const unit of ams) {
-      const hum = unit.humidity_raw ? `${unit.humidity_raw} % Luftfeuchte` : (unit.humidity ? `Feuchtestufe ${unit.humidity}` : "");
-      html += `<div style="margin-top:6px"><b>AMS ${Number(unit.id) + 1}</b> <span class="muted">${esc([hum, unit.temp ? unit.temp + " °C" : ""].filter(Boolean).join(" · "))}</span></div><div class="trays">`;
+      const name = amsName(state, unit.id);
+      const hum = unit.humidity_raw
+        ? `${unit.humidity_raw} % Luftfeuchte${unit.humidity ? ` (Stufe ${unit.humidity}/5, ${HUMIDITY[unit.humidity] || ""})` : ""}`
+        : (unit.humidity ? `Feuchtestufe ${unit.humidity}/5 (${HUMIDITY[unit.humidity] || "?"})` : "");
+      html += `<div style="margin-top:6px"><b>${esc(name)}</b> <span class="muted">${esc([hum, unit.temp ? unit.temp + " °C" : ""].filter(Boolean).join(" · "))}</span></div>`;
+      const dryLeft = num(unit.dry_time);
+      if (dryLeft) {
+        const ds = unit.dry_setting || {};
+        html += `<div class="dry">🔥 Trocknet${ds.dry_filament ? " " + esc(ds.dry_filament) : ""}${ds.dry_temperature ? ` bei ${esc(ds.dry_temperature)} °C` : ""}: noch ca. ${fmtMinutes(dryLeft)}${ds.dry_duration ? ` (von ${esc(ds.dry_duration)} h)` : ""}</div>`;
+      }
+      html += `<div class="trays">`;
       for (const t of unit.tray || []) {
         const global = String(Number(unit.id) * 4 + Number(t.id));
-        const color = trayColor(t.tray_color);
-        const remain = num(t.remain);
-        html += `<div class="tray${global === trayNow ? " active" : ""}">
-          <div class="swatch${color && t.tray_type ? "" : " empty"}" style="${color && t.tray_type ? `background:${color}` : ""}"></div>
-          <div><b>${esc(t.tray_type || "leer")}</b></div>
-          <div class="muted">${esc(t.tray_sub_brands || "")}</div>
-          <div>${t.tray_type && remain !== null && remain >= 0 ? remain + " %" : ""}</div></div>`;
+        html += trayHtml(t, global === trayNow);
       }
       html += "</div>";
     }
   }
-  const vt = p.vt_tray;
-  if (vt && vt.tray_type) {
-    html += `<div style="margin-top:10px"><b>Externe Spule:</b> ${esc(vt.tray_type)} ${trayColor(vt.tray_color) ? `<span style="display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:middle;background:${trayColor(vt.tray_color)}"></span>` : ""}${trayNow === "254" ? " (aktiv)" : ""}</div>`;
+  const ext = (Array.isArray(p.vir_slot) ? p.vir_slot[0] : null) || p.vt_tray;
+  if (ext && ext.tray_type) {
+    html += `<div style="margin-top:10px"><b>Externe Spule</b></div><div class="trays">${trayHtml(ext, trayNow === "254" || trayNow === String(ext.id))}</div>`;
   }
   $("ams").innerHTML = html || "Keine AMS-Daten";
   $("ams").className = html ? "" : "muted";
 
-  // HMS
+  // --- HMS ---
   const hms = Array.isArray(p.hms) ? p.hms : [];
-  if (hms.length) {
-    $("hms").innerHTML = hms.map((h) => `<div class="hms">${hmsCode(h)}</div>`).join("") +
-      `<div class="muted" style="font-size:13px;margin-top:6px">Codes im Bambu-Wiki nachschlagen (Suche nach dem Code).</div>`;
+  let hmsHtml = hms.map((h) => {
+    const level = HMS_LEVELS[(Number(h.code) >>> 16)] || "";
+    const when = fmtBambuTs(h.ts_unix);
+    return `<div class="hmsitem"><span class="hms">${hmsCode(h)}</span>${level ? ` · ${level}` : ""}${when ? ` <span class="muted">seit ${when}</span>` : ""}</div>`;
+  }).join("");
+  if (num(p.print_error)) hmsHtml = `<div class="hmsitem"><span class="hms">print_error ${Number(p.print_error).toString(16).toUpperCase().padStart(8, "0")}</span></div>` + hmsHtml;
+  if (hmsHtml) {
+    $("hms").innerHTML = hmsHtml + `<div class="muted" style="font-size:13px;margin-top:6px">Den Klartext zeigt die Bambu Handy App. Codes lassen sich auch im <a href="https://wiki.bambulab.com/en/hms/error-code" target="_blank" rel="noopener">Bambu-Wiki</a> suchen.</div>`;
     $("hms").className = "";
   } else {
     $("hms").textContent = "Keine"; $("hms").className = "muted";
   }
-  if (num(p.print_error)) $("hms").insertAdjacentHTML("afterbegin", `<div class="hms">print_error: ${p.print_error} (0x${Number(p.print_error).toString(16).toUpperCase()})</div>`);
+}
+
+function trayHtml(t, active) {
+  const cols = (Array.isArray(t.cols) && t.cols.length ? t.cols : [t.tray_color]).map(trayColor).filter(Boolean);
+  const has = t.tray_type && cols.length;
+  const bg = !has ? "" : cols.length === 1 ? cols[0] : `linear-gradient(90deg, ${cols.join(", ")})`;
+  const remain = num(t.remain);
+  const brand = t.tray_sub_brands || (/99$/.test(t.tray_info_idx || "") ? "Generic" : "");
+  const rest = !t.tray_type ? "" : remain !== null && remain >= 0 ? `${remain} %` : `<span class="muted" title="Restmenge nur bei Bambu-Spulen mit RFID bekannt">Rest ?</span>`;
+  return `<div class="tray${active ? " active" : ""}">
+    <div class="swatch${has ? (cols.length > 1 ? " multi" : "") : " empty"}" style="${has ? `background:${bg}` : ""}"></div>
+    <div><b>${esc(t.tray_type || "leer")}</b></div>
+    <div class="muted">${esc(brand)}</div>
+    <div>${rest}</div></div>`;
 }
 
 // ---- Rohdaten-Tabelle --------------------------------------------------- //

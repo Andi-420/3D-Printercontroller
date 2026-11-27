@@ -28,6 +28,7 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
+DEMO_FILE = BASE_DIR / "demo" / "p2s_beispiel.json"
 MQTT_PORT = 8883
 MQTT_USER = "bblp"
 PUSHALL_COOLDOWN_S = 60  # pushall nicht zu oft anfordern, das belastet den Drucker
@@ -231,10 +232,10 @@ class BambuReader:
 # --------------------------------------------------------------------------- #
 
 class DemoReader:
-    """Erzeugt beispielhafte Daten, damit man die Oberfläche ohne Drucker sieht.
+    """Spielt Beispieldaten ab, damit man die Oberfläche ohne Drucker sieht.
 
-    Die Feldnamen entsprechen dem, was Bambu-Drucker typischerweise senden.
-    Was dein P2S wirklich meldet, siehst du erst mit echter Verbindung.
+    Grundlage ist ein echter, anonymisierter Status eines P2S (demo/p2s_beispiel.json).
+    Temperaturen, Fortschritt und Trocknung werden leicht animiert.
     """
 
     def __init__(self, state: PrinterState):
@@ -252,101 +253,55 @@ class DemoReader:
     def request_pushall(self, force: bool = False) -> tuple[bool, str]:
         self.state.merge(self._full())
         self.state.set_meta(last_pushall=time.time())
-        return True, "Demo: vollständiger Status neu erzeugt."
+        return True, "Demo: vollständiger Status neu geladen."
 
-    def _full(self) -> dict:
-        return {
-            "print": {
-                "command": "push_status",
-                "msg": 0,
-                "sequence_id": "1",
-                "gcode_state": "RUNNING",
-                "subtask_name": "Benchy",
-                "gcode_file": "/data/Metadata/plate_1.gcode",
-                "mc_percent": 37,
-                "mc_remaining_time": 48,
-                "mc_print_stage": "2",
-                "stg_cur": 0,
-                "layer_num": 71,
-                "total_layer_num": 192,
-                "nozzle_temper": 219.8,
-                "nozzle_target_temper": 220,
-                "bed_temper": 59.9,
-                "bed_target_temper": 60,
-                "chamber_temper": 31,
-                "cooling_fan_speed": "15",
-                "big_fan1_speed": "8",
-                "big_fan2_speed": "5",
-                "heatbreak_fan_speed": "15",
-                "spd_lvl": 2,
-                "spd_mag": 100,
-                "wifi_signal": "-52dBm",
-                "nozzle_diameter": "0.4",
-                "nozzle_type": "hardened_steel",
-                "print_error": 0,
-                "print_type": "cloud",
-                "sdcard": True,
-                "home_flag": 6292376,
-                "hms": [],
-                "lights_report": [{"node": "chamber_light", "mode": "on"}],
-                "ipcam": {"ipcam_dev": "1", "ipcam_record": "enable", "timelapse": "disable", "resolution": "1080p",
-                          "rtsp_url": "rtsps://192.168.1.50/streaming/live/1"},
-                "net": {"conf": 16, "info": [{"ip": 838969536, "mask": 16777215}, {"ip": 0, "mask": 0}]},
-                "task_id": "123456789",
-                "subtask_id": "123456790",
-                "project_id": "987654",
-                "profile_id": "0",
-                "upgrade_state": {"status": "IDLE", "new_version_state": 2, "ota_new_version_number": ""},
-                "ams": {
-                    "ams_exist_bits": "1",
-                    "tray_now": "1",
-                    "tray_tar": "1",
-                    "ams": [
-                        {
-                            "id": "0",
-                            "humidity": "4",
-                            "humidity_raw": "23",
-                            "temp": "26.1",
-                            "tray": [
-                                {"id": "0", "tray_type": "PLA", "tray_sub_brands": "PLA Basic", "tray_color": "FFFFFFFF", "remain": 82, "nozzle_temp_min": "190", "nozzle_temp_max": "230"},
-                                {"id": "1", "tray_type": "PLA", "tray_sub_brands": "PLA Matte", "tray_color": "F72323FF", "remain": 45, "nozzle_temp_min": "190", "nozzle_temp_max": "230"},
-                                {"id": "2", "tray_type": "PETG", "tray_sub_brands": "PETG HF", "tray_color": "161616FF", "remain": 100, "nozzle_temp_min": "230", "nozzle_temp_max": "260"},
-                                {"id": "3"},
-                            ],
-                        }
-                    ],
-                },
-                "vt_tray": {"id": "254", "tray_type": "", "tray_color": "00000000", "remain": 0},
-            },
-            "info": {
-                "command": "get_version",
-                "module": [
-                    {"name": "ota", "sw_ver": "01.00.00.00 (Demo)", "hw_ver": "OTA", "sn": "DEMO0000000000"},
-                    {"name": "ams/0", "sw_ver": "00.00.07.89", "hw_ver": "AMS08", "sn": "DEMOAMS000000"},
-                ],
-            },
-        }
+    @staticmethod
+    def _full() -> dict:
+        return json.loads(DEMO_FILE.read_text(encoding="utf-8"))
+
+    @staticmethod
+    def _packed(current: float, target: int) -> int:
+        """Neuere Bambu-Firmware packt Temperaturen als (Soll << 16) | Ist."""
+        return (int(target) << 16) | int(round(current))
 
     def _loop(self) -> None:
+        base = self._full()["print"]
+        layer, total = base["layer_num"], base["total_layer_num"]
+        remaining = base["mc_remaining_time"]
+        dry = base["ams"]["ams"][0].get("dry_time", 0)
         t = 0
-        progress, layer, remaining = 37, 71, 48
         while not self._stop.wait(1.5):
             t += 1
+            nozzle = 220 + math.sin(t / 3) * 0.6
+            bed = 55 + math.sin(t / 5) * 0.3
+            chamber = 27 + (t // 20) % 3
             update = {
                 "print": {
-                    "nozzle_temper": round(220 + math.sin(t / 3) * 0.6, 1),
-                    "bed_temper": round(60 + math.sin(t / 5) * 0.3, 1),
-                    "chamber_temper": 31 + (t // 20) % 3,
-                    "big_fan1_speed": str(7 + t % 3),
+                    "nozzle_temper": round(nozzle, 1),
+                    "bed_temper": round(bed, 1),
+                    "big_fan1_speed": str(13 + t % 3),
+                    "device": {
+                        "extruder": {"info": [{"id": 0, "temp": self._packed(nozzle, 220)}]},
+                        "bed": {"info": {"temp": self._packed(bed, 55)}},
+                        "bed_temp": self._packed(bed, 55),
+                        "ctc": {"info": {"temp": chamber}},
+                    },
+                    "info": {"temp": chamber},
                 }
             }
             if t % 8 == 0:
-                progress = min(100, progress + 1)
-                layer = min(192, layer + 2)
+                layer = min(total, layer + 1)
                 remaining = max(0, remaining - 1)
-                update["print"].update(mc_percent=progress, layer_num=layer, mc_remaining_time=remaining)
+                pct = round(layer / total * 100)
+                update["print"].update(
+                    layer_num=layer, mc_remaining_time=remaining, remain_time=remaining,
+                    mc_percent=pct, percent=pct, **{"3D": {"layer_num": layer}},
+                )
+            if t % 40 == 0 and dry:
+                dry = max(0, dry - 1)
+                update["print"]["ams"] = {"ams": [{"id": "0", "dry_time": dry}]}
             if t % 30 == 0:
-                update["print"]["wifi_signal"] = f"-{random.randint(48, 58)}dBm"
+                update["print"]["wifi_signal"] = f"-{random.randint(62, 72)}dBm"
             self.state.merge(update)
 
 

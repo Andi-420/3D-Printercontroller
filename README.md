@@ -44,7 +44,7 @@ python3 monitor.py
 
 Danach <http://localhost:8080> im Browser öffnen.
 
-Ohne Drucker, mit Beispieldaten:
+Ohne Drucker, mit Beispieldaten (ein echter, anonymisierter P2S-Status aus `demo/p2s_beispiel.json`):
 
 ```bash
 python3 monitor.py --demo
