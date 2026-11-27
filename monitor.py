@@ -117,7 +117,14 @@ class PrinterState:
 
 class BambuReader:
     def __init__(self, host: str, serial: str, access_code: str, state: PrinterState, log_path: Path | None):
-        import paho.mqtt.client as mqtt
+        try:
+            import paho.mqtt.client as mqtt
+        except ImportError:
+            sys.exit(
+                "Fehler: Die Bibliothek 'paho-mqtt' fehlt für dieses Python.\n"
+                "Installiere sie mit demselben Befehl, mit dem du das Programm startest:\n"
+                f'  "{sys.executable}" -m pip install -r requirements.txt'
+            )
 
         self.state = state
         self.serial = serial

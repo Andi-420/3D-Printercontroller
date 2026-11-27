@@ -21,10 +21,11 @@ sind nicht nötig.
 ## Einrichtung
 
 Voraussetzung: Python 3.10 oder neuer und ein Rechner im selben Netzwerk wie der Drucker.
+Unter Windows ggf. `py` statt `python3` verwenden, aber für Installation und Start immer denselben Befehl.
 
 1. Abhängigkeit installieren:
    ```bash
-   pip install -r requirements.txt
+   python3 -m pip install -r requirements.txt
    ```
 2. Am Drucker-Display ablesen:
    - **IP-Adresse** und **Access Code**: Einstellungen → WLAN
