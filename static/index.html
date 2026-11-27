@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bambu Monitor</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --text: #1c1e21; --muted: #6b7280; --line: #e3e5e8;
+    --accent: #00a650; --warn: #d97706; --err: #dc2626; --flash: #fff3c4; --bar: #e8eaed;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111315; --card: #1b1e21; --text: #e8eaed; --muted: #9aa0a6; --line: #2c3035;
+            --accent: #2ecc71; --warn: #f59e0b; --err: #f87171; --flash: #4a3f12; --bar: #2c3035; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center;
+           padding: 14px 16px; background: var(--card); border-bottom: 1px solid var(--line);
+           position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 18px; margin: 0; margin-right: auto; }
+  .pill { padding: 3px 10px; border-radius: 99px; font-size: 13px; font-weight: 600; background: var(--bar); }
+  .pill.ok { background: var(--accent); color: #fff; }
+  .pill.bad { background: var(--err); color: #fff; }
+  .pill.demo { background: var(--warn); color: #fff; }
+  .meta { color: var(--muted); font-size: 13px; }
+  button { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line);
+           background: var(--bg); color: var(--text); cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  main { max-width: 1200px; margin: 0 auto; padding: 16px; }
+  .banner { padding: 10px 14px; border-radius: 10px; margin-bottom: 14px; background: var(--card);
+            border-left: 4px solid var(--err); }
+  .banner.info { border-left-color: var(--warn); }
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 10px; }
+  .big { font-size: 26px; font-weight: 650; }
+  .row { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; }
+  .row span:first-child { color: var(--muted); flex: none; }
+  .row span:last-child { text-align: right; overflow-wrap: anywhere; }
+  .bar { height: 10px; background: var(--bar); border-radius: 99px; overflow: hidden; margin: 8px 0; }
+  .bar > div { height: 100%; background: var(--accent); transition: width .5s; }
+  .temp { display: flex; align-items: baseline; justify-content: space-between; padding: 4px 0; }
+  .temp b { font-size: 22px; font-weight: 650; }
+  .temp small { color: var(--muted); }
+  .trays { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 8px; }
+  .tray { border: 1px solid var(--line); border-radius: 8px; padding: 6px; text-align: center; font-size: 12px; min-width: 0; }
+  .tray.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .swatch { height: 22px; border-radius: 5px; margin-bottom: 4px; border: 1px solid var(--line); }
+  .swatch.empty { background: repeating-linear-gradient(45deg, transparent 0 4px, var(--line) 4px 8px); }
+  .hms { color: var(--err); font-family: ui-monospace, monospace; font-size: 13px; }
+  h3.section { margin: 26px 0 10px; font-size: 17px; }
+  .tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
+  .tools input[type=search] { flex: 1 1 220px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line);
+                              background: var(--card); color: var(--text); font: inherit; }
+  .tools label { font-size: 13px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+  .tablewrap { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--card); }
+  td.path { font-family: ui-monospace, monospace; white-space: nowrap; }
+  td.val { font-family: ui-monospace, monospace; overflow-wrap: anywhere; max-width: 340px; }
+  td.desc { color: var(--muted); min-width: 180px; }
+  td.age { color: var(--muted); white-space: nowrap; }
+  tr.flash td { animation: flash 2.5s ease-out; }
+  @keyframes flash { from { background: var(--flash); } to { background: transparent; } }
+  .muted { color: var(--muted); }
+  @media (max-width: 600px) {
+    td.desc { display: none; } th.desc { display: none; }
+    .big { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>🖨️ Bambu Monitor <span class="muted" style="font-weight:400;font-size:13px">nur lesen</span></h1>
+  <span id="conn" class="pill">Verbinde …</span>
+  <span id="metaInfo" class="meta"></span>
+  <button id="pushall" title="Fordert einmal den kompletten Status vom Drucker an (nur lesend)">Vollständigen Status anfordern</button>
+</header>
+
+<main>
+  <div id="banner"></div>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Druck</h2>
+      <div class="big" id="jobState">—</div>
+      <div class="muted" id="jobName"></div>
+      <div class="bar"><div id="progressBar" style="width:0%"></div></div>
+      <div class="row"><span>Fortschritt</span><span id="progress">—</span></div>
+      <div class="row"><span>Schicht</span><span id="layer">—</span></div>
+      <div class="row"><span>Restzeit</span><span id="remaining">—</span></div>
+      <div class="row"><span>Fertig um</span><span id="eta">—</span></div>
+      <div class="row"><span>Phase</span><span id="stage">—</span></div>
+    </section>
+
+    <section class="card">
+      <h2>Temperaturen</h2>
+      <div class="temp"><span>Düse</span><span><b id="tNozzle">—</b> <small id="tNozzleT"></small></span></div>
+      <div class="temp"><span>Bett</span><span><b id="tBed">—</b> <small id="tBedT"></small></span></div>
+      <div class="temp"><span>Kammer</span><span><b id="tChamber">—</b> <small id="tChamberT"></small></span></div>
+    </section>
+
+    <section class="card">
+      <h2>Lüfter &amp; Geschwindigkeit</h2>
+      <div class="row"><span>Bauteillüfter</span><span id="fanPart">—</span></div>
+      <div class="row"><span>Aux-Lüfter</span><span id="fanAux">—</span></div>
+      <div class="row"><span>Kammerlüfter</span><span id="fanChamber">—</span></div>
+      <div class="row"><span>Hotend-Lüfter</span><span id="fanHeatbreak">—</span></div>
+      <div class="row"><span>Geschwindigkeit</span><span id="speed">—</span></div>
+    </section>
+
+    <section class="card">
+      <h2>System</h2>
+      <div class="row"><span>WLAN-Signal</span><span id="wifi">—</span></div>
+      <div class="row"><span>Düse</span><span id="nozzleInfo">—</span></div>
+      <div class="row"><span>Licht</span><span id="lights">—</span></div>
+      <div class="row"><span>Speicherkarte</span><span id="sdcard">—</span></div>
+      <div class="row"><span>Kamera</span><span id="camera">—</span></div>
+      <div class="row"><span>Firmware</span><span id="firmware">—</span></div>
+      <div class="row"><span>Update</span><span id="upgrade">—</span></div>
+    </section>
+
+    <section class="card" style="grid-column: 1 / -1">
+      <h2>AMS &amp; Filament</h2>
+      <div id="ams" class="muted">Keine AMS-Daten</div>
+    </section>
+
+    <section class="card" style="grid-column: 1 / -1">
+      <h2>Meldungen (HMS)</h2>
+      <div id="hms" class="muted">Keine</div>
+    </section>
+  </div>
+
+  <h3 class="section">Alle Rohdaten <span id="fieldCount" class="muted" style="font-weight:400;font-size:14px"></span></h3>
+  <div class="tools">
+    <input id="filter" type="search" placeholder="Feld oder Wert suchen, z. B. temper, ams, fan …">
+    <label><input id="onlyChanged" type="checkbox"> nur in den letzten 60 s geändert</label>
+    <button id="download">Als JSON herunterladen</button>
+  </div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Feld</th><th>Wert</th><th class="desc">Bedeutung</th><th>Geändert</th></tr></thead>
+      <tbody id="fields"></tbody>
+    </table>
+  </div>
+  <p class="muted" style="font-size:13px">
+    Gelb blinkende Zeilen haben sich gerade geändert. Die Bedeutungen sind aus der Community bekannt
+    und nicht offiziell dokumentiert. Felder ohne Erklärung sind unbekannt oder modellspezifisch.
+  </p>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+
+// Bekannte Felder (Pfad mit [] statt Index) -> Bedeutung
+const DESCRIPTIONS = {
+  "print.command": "Nachrichtentyp (push_status = Statusmeldung)",
+  "print.sequence_id": "Laufende Nummer der Nachricht",
+  "print.msg": "Interner Nachrichtenzähler",
+  "print.gcode_state": "Druckerzustand: IDLE, PREPARE, RUNNING, PAUSE, FINISH, FAILED",
+  "print.subtask_name": "Name des aktuellen Druckauftrags",
+  "print.gcode_file": "Pfad der G-Code-Datei",
+  "print.mc_percent": "Fortschritt in %",
+  "print.mc_remaining_time": "Restzeit in Minuten",
+  "print.mc_print_stage": "Grober Druckabschnitt",
+  "print.stg_cur": "Aktuelle Phase (Kalibrieren, Heizen, Drucken …)",
+  "print.stg": "Liste der geplanten Phasen",
+  "print.layer_num": "Aktuelle Schicht",
+  "print.total_layer_num": "Anzahl Schichten gesamt",
+  "print.nozzle_temper": "Düsentemperatur Ist (°C)",
+  "print.nozzle_target_temper": "Düsentemperatur Soll (°C)",
+  "print.bed_temper": "Betttemperatur Ist (°C)",
+  "print.bed_target_temper": "Betttemperatur Soll (°C)",
+  "print.chamber_temper": "Kammertemperatur (°C)",
+  "print.cooling_fan_speed": "Bauteillüfter (0–15)",
+  "print.big_fan1_speed": "Aux-Lüfter (0–15)",
+  "print.big_fan2_speed": "Kammerlüfter (0–15)",
+  "print.heatbreak_fan_speed": "Hotend-/Heatbreak-Lüfter (0–15)",
+  "print.spd_lvl": "Geschwindigkeitsstufe: 1 Leise, 2 Standard, 3 Sport, 4 Ludicrous",
+  "print.spd_mag": "Geschwindigkeit in %",
+  "print.wifi_signal": "WLAN-Signalstärke",
+  "print.nozzle_diameter": "Düsendurchmesser (mm)",
+  "print.nozzle_type": "Düsenmaterial",
+  "print.print_error": "Fehlercode des Drucks (0 = kein Fehler)",
+  "print.print_type": "Herkunft des Drucks (cloud, local, idle …)",
+  "print.sdcard": "Speicherkarte eingesteckt",
+  "print.home_flag": "Bitfeld mit diversen Statusbits (z. B. Speicherkarte, Achsen referenziert)",
+  "print.hms": "Aktive Meldungen/Fehler (Health Management System)",
+  "print.hms[].attr": "HMS-Code Teil 1",
+  "print.hms[].code": "HMS-Code Teil 2",
+  "print.lights_report[].node": "Lichtquelle",
+  "print.lights_report[].mode": "Licht-Zustand (on/off/flashing)",
+  "print.ipcam.ipcam_dev": "Kamera vorhanden",
+  "print.ipcam.ipcam_record": "Aufnahme aktiv",
+  "print.ipcam.timelapse": "Zeitraffer aktiviert",
+  "print.ipcam.resolution": "Kameraauflösung",
+  "print.upgrade_state.status": "Firmware-Update-Status",
+  "print.upgrade_state.new_version_state": "Neue Firmware verfügbar (1 = ja, 2 = nein)",
+  "print.ams.ams_exist_bits": "Welche AMS-Einheiten angeschlossen sind (Bitmaske)",
+  "print.ams.tray_now": "Aktive Spule (255 = keine, 254 = externe Spule)",
+  "print.ams.tray_tar": "Ziel-Spule beim Filamentwechsel",
+  "print.ams.tray_exist_bits": "Welche Fächer belegt sind (Bitmaske)",
+  "print.ams.ams[].id": "AMS-Nummer",
+  "print.ams.ams[].humidity": "Feuchtigkeitsstufe (1–5)",
+  "print.ams.ams[].humidity_raw": "Luftfeuchtigkeit im AMS (%)",
+  "print.ams.ams[].temp": "Temperatur im AMS (°C)",
+  "print.ams.ams[].tray[].id": "Fachnummer",
+  "print.ams.ams[].tray[].tray_type": "Filamenttyp",
+  "print.ams.ams[].tray[].tray_sub_brands": "Filament-Produktname",
+  "print.ams.ams[].tray[].tray_color": "Farbe (RRGGBBAA)",
+  "print.ams.ams[].tray[].remain": "Restmenge in % (-1 = unbekannt)",
+  "print.ams.ams[].tray[].nozzle_temp_min": "Empfohlene Düsentemperatur min",
+  "print.ams.ams[].tray[].nozzle_temp_max": "Empfohlene Düsentemperatur max",
+  "print.ams.ams[].tray[].tray_uuid": "Seriennummer der Bambu-Spule (RFID)",
+  "print.ams.ams[].tray[].tag_uid": "RFID-Tag-ID",
+  "print.ams.ams[].tray[].tray_weight": "Spulengewicht (g)",
+  "print.ams.ams[].tray[].tray_diameter": "Filamentdurchmesser (mm)",
+  "print.ams.ams[].tray[].bed_temp": "Empfohlene Betttemperatur",
+  "print.ams.ams[].tray[].drying_temp": "Empfohlene Trocknungstemperatur",
+  "print.ams.ams[].tray[].drying_time": "Empfohlene Trocknungszeit (h)",
+  "print.vt_tray": "Externe Spule (hinten am Drucker)",
+  "print.vt_tray.tray_type": "Filamenttyp externe Spule",
+  "print.vt_tray.tray_color": "Farbe externe Spule",
+  "info.module": "Hardware-Module mit Firmware-Version",
+  "info.module[].name": "Modulname",
+  "info.module[].sw_ver": "Firmware-Version",
+  "info.module[].hw_ver": "Hardware-Version",
+  "info.module[].sn": "Seriennummer des Moduls",
+};
+
+const STATES = { IDLE: "Bereit", PREPARE: "Vorbereitung", RUNNING: "Druckt", PAUSE: "Pausiert",
+                 FINISH: "Fertig", FAILED: "Fehlgeschlagen", SLICING: "Slicen", INIT: "Startet" };
+const SPEEDS = { 1: "Leise", 2: "Standard", 3: "Sport", 4: "Ludicrous" };
+const STAGES = {
+  0: "Drucken", 1: "Bett-Nivellierung", 2: "Heizbett vorheizen", 3: "Vibrationskompensation",
+  4: "Filamentwechsel", 5: "Pause (M400)", 6: "Pause: Filament leer", 7: "Düse heizen",
+  8: "Extrusion kalibrieren", 9: "Bettoberfläche scannen", 10: "Erste Schicht prüfen",
+  11: "Druckplatte erkennen", 12: "Lidar kalibrieren", 13: "Referenzfahrt", 14: "Düse reinigen",
+  15: "Extrudertemperatur prüfen", 16: "Pause durch Benutzer", 17: "Pause: Frontabdeckung",
+  18: "Lidar kalibrieren", 19: "Durchfluss kalibrieren", 20: "Pause: Düsentemperatur-Fehler",
+  21: "Pause: Betttemperatur-Fehler", 22: "Filament entladen", 23: "Pause: Schrittverlust",
+  24: "Filament laden", 25: "Motorgeräusch kalibrieren", 26: "Pause: AMS getrennt",
+  27: "Pause: Hotend-Lüfter zu langsam", 28: "Pause: Kammertemperatur-Fehler", 29: "Kammer kühlen",
+  30: "Pause durch G-Code", 31: "Motorgeräusch-Demo", 32: "Pause: Düse verklebt",
+  33: "Pause: Cutter-Fehler", 34: "Pause: Fehler erste Schicht", 35: "Pause: Düse verstopft",
+  255: "—", "-1": "—",
+};
+
+let snapshot = null;
+const fieldInfo = new Map();   // Pfad -> { value, changedAt }
+let firstRender = true;
+
+const num = (v) => (v === undefined || v === null || v === "" || isNaN(Number(v))) ? null : Number(v);
+const fmtTemp = (v) => num(v) === null ? "—" : `${Number(v).toFixed(1).replace(/\.0$/, "")} °C`;
+const fanPct = (v) => num(v) === null ? "—" : `${Math.round(Number(v) / 15 * 100)} %`;
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function fmtMinutes(m) {
+  m = num(m); if (m === null) return "—";
+  const h = Math.floor(m / 60), r = m % 60;
+  return h ? `${h} h ${r} min` : `${r} min`;
+}
+function setText(id, text) { $(id).textContent = text; }
+
+// Neuere Modelle melden Temperaturen teils gepackt: (Soll << 16) | Ist
+function unpackTemp(v) {
+  v = num(v); if (v === null) return [null, null];
+  return v > 0xffff ? [v & 0xffff, v >>> 16] : [v, null];
+}
+function nozzleTemps(p, state) {
+  if (p.nozzle_temper !== undefined) return [p.nozzle_temper, p.nozzle_target_temper];
+  const info = state.device?.extruder?.info;
+  if (Array.isArray(info) && info.length) return unpackTemp(info[0].temp);
+  return [null, null];
+}
+
+function hmsCode(h) {
+  const a = Number(h.attr) >>> 0, c = Number(h.code) >>> 0;
+  const hex = (n) => n.toString(16).toUpperCase().padStart(4, "0");
+  return `HMS_${hex(a >>> 16)}_${hex(a & 0xffff)}_${hex(c >>> 16)}_${hex(c & 0xffff)}`;
+}
+
+function trayColor(c) {
+  if (!c || c.length < 6 || /^0{6}/.test(c) && c.endsWith("00")) return null;
+  return "#" + c.slice(0, 6);
+}
+
+function renderSummary(state, meta) {
+  const p = state.print || {};
+
+  setText("jobState", STATES[p.gcode_state] || p.gcode_state || "—");
+  setText("jobName", p.subtask_name || "");
+  const pct = num(p.mc_percent);
+  $("progressBar").style.width = `${pct ?? 0}%`;
+  setText("progress", pct === null ? "—" : `${pct} %`);
+  setText("layer", num(p.layer_num) === null ? "—" : `${p.layer_num} / ${p.total_layer_num ?? "?"}`);
+  setText("remaining", fmtMinutes(p.mc_remaining_time));
+  const rem = num(p.mc_remaining_time);
+  setText("eta", rem && p.gcode_state === "RUNNING"
+    ? new Date(Date.now() + rem * 60000).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) + " Uhr" : "—");
+  setText("stage", p.stg_cur === undefined ? "—" : (STAGES[p.stg_cur] ?? `Phase ${p.stg_cur}`));
+
+  const [nz, nzT] = nozzleTemps(p, state);
+  setText("tNozzle", fmtTemp(nz)); setText("tNozzleT", num(nzT) ? `→ ${fmtTemp(nzT)}` : "");
+  setText("tBed", fmtTemp(p.bed_temper)); setText("tBedT", num(p.bed_target_temper) ? `→ ${fmtTemp(p.bed_target_temper)}` : "");
+  setText("tChamber", fmtTemp(p.chamber_temper));
+  setText("tChamberT", num(p.chamber_target_temper) ? `→ ${fmtTemp(p.chamber_target_temper)}` : "");
+
+  setText("fanPart", fanPct(p.cooling_fan_speed));
+  setText("fanAux", fanPct(p.big_fan1_speed));
+  setText("fanChamber", fanPct(p.big_fan2_speed));
+  setText("fanHeatbreak", fanPct(p.heatbreak_fan_speed));
+  setText("speed", p.spd_lvl === undefined ? "—" : `${SPEEDS[p.spd_lvl] || p.spd_lvl}${p.spd_mag ? ` (${p.spd_mag} %)` : ""}`);
+
+  setText("wifi", p.wifi_signal || "—");
+  setText("nozzleInfo", p.nozzle_diameter ? `${p.nozzle_diameter} mm${p.nozzle_type ? ", " + p.nozzle_type.replace(/_/g, " ") : ""}` : "—");
+  setText("lights", Array.isArray(p.lights_report) && p.lights_report.length
+    ? p.lights_report.map((l) => `${l.node.replace(/_/g, " ")}: ${l.mode}`).join(", ") : "—");
+  setText("sdcard", p.sdcard === undefined ? "—" : (p.sdcard ? "eingesteckt" : "keine"));
+  setText("camera", p.ipcam ? `${p.ipcam.resolution || ""}${p.ipcam.timelapse === "enable" ? ", Zeitraffer an" : ""}`.replace(/^, /, "") || "vorhanden" : "—");
+  const ota = (state.info?.module || []).find((m) => m.name === "ota");
+  setText("firmware", ota?.sw_ver || "—");
+  const up = p.upgrade_state;
+  setText("upgrade", !up ? "—" : (up.new_version_state === 1 ? `neue Version ${up.ota_new_version_number || ""} verfügbar`
+    : (!up.status || up.status === "IDLE" ? "aktuell" : up.status)));
+
+  // AMS
+  const ams = p.ams?.ams;
+  const trayNow = String(p.ams?.tray_now ?? "");
+  let html = "";
+  if (Array.isArray(ams) && ams.length) {
+    for (const unit of ams) {
+      const hum = unit.humidity_raw ? `${unit.humidity_raw} % Luftfeuchte` : (unit.humidity ? `Feuchtestufe ${unit.humidity}` : "");
+      html += `<div style="margin-top:6px"><b>AMS ${Number(unit.id) + 1}</b> <span class="muted">${esc([hum, unit.temp ? unit.temp + " °C" : ""].filter(Boolean).join(" · "))}</span></div><div class="trays">`;
+      for (const t of unit.tray || []) {
+        const global = String(Number(unit.id) * 4 + Number(t.id));
+        const color = trayColor(t.tray_color);
+        const remain = num(t.remain);
+        html += `<div class="tray${global === trayNow ? " active" : ""}">
+          <div class="swatch${color && t.tray_type ? "" : " empty"}" style="${color && t.tray_type ? `background:${color}` : ""}"></div>
+          <div><b>${esc(t.tray_type || "leer")}</b></div>
+          <div class="muted">${esc(t.tray_sub_brands || "")}</div>
+          <div>${t.tray_type && remain !== null && remain >= 0 ? remain + " %" : ""}</div></div>`;
+      }
+      html += "</div>";
+    }
+  }
+  const vt = p.vt_tray;
+  if (vt && vt.tray_type) {
+    html += `<div style="margin-top:10px"><b>Externe Spule:</b> ${esc(vt.tray_type)} ${trayColor(vt.tray_color) ? `<span style="display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:middle;background:${trayColor(vt.tray_color)}"></span>` : ""}${trayNow === "254" ? " (aktiv)" : ""}</div>`;
+  }
+  $("ams").innerHTML = html || "Keine AMS-Daten";
+  $("ams").className = html ? "" : "muted";
+
+  // HMS
+  const hms = Array.isArray(p.hms) ? p.hms : [];
+  if (hms.length) {
+    $("hms").innerHTML = hms.map((h) => `<div class="hms">${hmsCode(h)}</div>`).join("") +
+      `<div class="muted" style="font-size:13px;margin-top:6px">Codes im Bambu-Wiki nachschlagen (Suche nach dem Code).</div>`;
+    $("hms").className = "";
+  } else {
+    $("hms").textContent = "Keine"; $("hms").className = "muted";
+  }
+  if (num(p.print_error)) $("hms").insertAdjacentHTML("afterbegin", `<div class="hms">print_error: ${p.print_error} (0x${Number(p.print_error).toString(16).toUpperCase()})</div>`);
+}
+
+// ---- Rohdaten-Tabelle --------------------------------------------------- //
+function flatten(obj, prefix = "", out = []) {
+  if (obj !== null && typeof obj === "object") {
+    const entries = Array.isArray(obj) ? obj.map((v, i) => [`[${i}]`, v]) : Object.entries(obj).map(([k, v]) => [(prefix ? "." : "") + k, v]);
+    if (!entries.length) out.push([prefix, Array.isArray(obj) ? "[]" : "{}"]);
+    for (const [k, v] of entries) flatten(v, prefix + k, out);
+  } else {
+    out.push([prefix, obj]);
+  }
+  return out;
+}
+
+function ago(ts) {
+  if (!ts) return "";
+  const s = Math.round((Date.now() - ts) / 1000);
+  if (s < 60) return `vor ${s} s`;
+  if (s < 3600) return `vor ${Math.round(s / 60)} min`;
+  return `vor ${Math.round(s / 3600)} h`;
+}
+
+function updateFields(state) {
+  const now = Date.now();
+  const seen = new Set();
+  for (const [path, value] of flatten(state)) {
+    seen.add(path);
+    const repr = JSON.stringify(value);
+    const prev = fieldInfo.get(path);
+    if (!prev) fieldInfo.set(path, { value: repr, changedAt: firstRender ? 0 : now, fresh: !firstRender });
+    else if (prev.value !== repr) { prev.value = repr; prev.changedAt = now; prev.fresh = true; }
+  }
+  for (const path of [...fieldInfo.keys()]) if (!seen.has(path)) fieldInfo.delete(path);
+  firstRender = false;
+}
+
+function renderFields() {
+  const q = $("filter").value.trim().toLowerCase();
+  const onlyChanged = $("onlyChanged").checked;
+  const now = Date.now();
+  const rows = [];
+  let shown = 0;
+  const paths = [...fieldInfo.keys()].sort();
+  for (const path of paths) {
+    const f = fieldInfo.get(path);
+    const key = path.replace(/\[\d+\]/g, "[]");
+    const desc = DESCRIPTIONS[key] || "";
+    if (q && !(path.toLowerCase().includes(q) || f.value.toLowerCase().includes(q) || desc.toLowerCase().includes(q))) continue;
+    if (onlyChanged && !(f.changedAt && now - f.changedAt < 60000)) continue;
+    shown++;
+    rows.push(`<tr${f.fresh ? ' class="flash"' : ""}><td class="path">${esc(path)}</td><td class="val">${esc(f.value)}</td><td class="desc">${esc(desc)}</td><td class="age">${ago(f.changedAt)}</td></tr>`);
+    f.fresh = false;
+  }
+  $("fields").innerHTML = rows.join("") || `<tr><td colspan="4" class="muted">Noch keine Daten${q || onlyChanged ? " für diesen Filter" : ""}.</td></tr>`;
+  $("fieldCount").textContent = `${fieldInfo.size} Felder${shown !== fieldInfo.size ? `, ${shown} angezeigt` : ""}`;
+}
+
+function renderMeta(meta) {
+  const conn = $("conn");
+  if (meta.demo) { conn.textContent = "Demo-Daten"; conn.className = "pill demo"; }
+  else if (meta.connected) { conn.textContent = "Verbunden"; conn.className = "pill ok"; }
+  else { conn.textContent = "Getrennt"; conn.className = "pill bad"; }
+  const last = meta.last_message ? new Date(meta.last_message * 1000).toLocaleTimeString("de-DE") : "—";
+  $("metaInfo").textContent = `${meta.serial} @ ${meta.host} · ${meta.messages} Nachrichten · zuletzt ${last}`;
+
+  let banner = "";
+  if (meta.error) banner = `<div class="banner">${esc(meta.error)}</div>`;
+  else if (meta.demo) banner = `<div class="banner info">Demo-Modus: Das sind Beispieldaten, kein echter Drucker. Was dein P2S wirklich meldet, siehst du erst mit echter Verbindung.</div>`;
+  else if (meta.connected && !meta.messages) banner = `<div class="banner info">Verbunden, aber noch keine Daten. Wenn das so bleibt, prüfe die Seriennummer (Großbuchstaben, ohne Leerzeichen).</div>`;
+  $("banner").innerHTML = banner;
+}
+
+function apply(snap) {
+  snapshot = snap;
+  renderMeta(snap.meta);
+  renderSummary(snap.state, snap.meta);
+  updateFields(snap.state);
+  renderFields();
+}
+
+// ---- Verbindung zum Monitor-Server -------------------------------------- //
+function connect() {
+  const es = new EventSource("/events");
+  es.onmessage = (e) => apply(JSON.parse(e.data));
+  es.onerror = () => { const c = $("conn"); c.textContent = "Monitor nicht erreichbar"; c.className = "pill bad"; };
+}
+
+$("filter").addEventListener("input", renderFields);
+$("onlyChanged").addEventListener("change", renderFields);
+setInterval(renderFields, 5000); // "vor X s" aktuell halten
+
+$("pushall").addEventListener("click", async () => {
+  const btn = $("pushall");
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/pushall", { method: "POST" });
+    const j = await r.json();
+    btn.textContent = j.message;
+  } catch { btn.textContent = "Fehler beim Anfordern"; }
+  setTimeout(() => { btn.textContent = "Vollständigen Status anfordern"; btn.disabled = false; }, 3000);
+});
+
+$("download").addEventListener("click", () => {
+  if (!snapshot) return;
+  const blob = new Blob([JSON.stringify(snapshot.state, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `bambu-status-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+connect();
+</script>
+</body>
+</html>
